@@ -80,31 +80,31 @@ var (
 ### Manipulating the Desired State
 
 Now, we have a `FunctionIO` object that contains the desired and observed `Robot`
-objects. In order to decide whether we should generate and set a random value,
-we need to check whether the created objects already got one.
+objects. We will make sure every element in the `desired.resources` array has its
+color set to a value; observed or random.
 
-Our function will work on only the `Robot` objects so let's import the type.
+Our function will work on only the `Robot` objects so let's import the necessary
+machinery.
 ```bash
 go get github.com/upbound/provider-dummy
+go get k8s.io/apimachinery/pkg/runtime
+go get k8s.io/apimachinery/pkg/util/json
+go get sigs.k8s.io/yaml
 ```
 
-Here we extract a list of existing resources that do not have their color set.
+Right after we get the `FunctionIO` object, here we extract the colors of the all
+observed `Robot`s to make sure to propagate them to the desired state so that
+they don't get overridden.
 ```go
-	alreadySet := map[string]bool{}
-	for _, observed := range obj.Observed.Resources {
-		if observed.Resource.Object.GetObjectKind().GroupVersionKind() != dummyv1alpha1.SchemeGroupVersion.WithKind("Robot") {
-			// skip if it is not a Robot
-			continue
-		}
-		r := &dummyv1alpha1.Robot{}
-		if err := yaml.Unmarshal(observed.Resource.Raw, r); err != nil {
-			fmt.Fprintf(os.Stderr, "failed to unmarshal observed resource: %v", err)
-			os.Exit(1)
-		}
-		if r.Spec.ForProvider.Color != "" {
-			alreadySet[observed.Name] = true
-		}
-	}
+	colors := map[string]string{}
+    for _, observed := range obj.Observed.Resources {
+        r := &dummyv1alpha1.Robot{}
+        if err := json.Unmarshal(observed.Resource.Raw, r); err != nil {
+            fmt.Fprintf(os.Stderr, "failed to unmarshal observed resource: %v", err)
+            os.Exit(1)
+        }
+        colors[observed.Name] = r.Spec.ForProvider.Color
+    }
 ```
 
 In the next loop, we skip all the entries that already have a color set and
@@ -112,35 +112,41 @@ generate a random color for the rest.
 
 ```go
 	for i, desired := range obj.Desired.Resources {
-		if desired.Resource.Object.GetObjectKind().GroupVersionKind() != dummyv1alpha1.SchemeGroupVersion.WithKind("Robot") {
-			// skip if it is not a Robot
-			continue
-		}
-		if alreadySet[desired.Name] {
-			continue
-		}
-		r := &dummyv1alpha1.Robot{}
-		if err := yaml.Unmarshal(desired.Resource.Raw, r); err != nil {
-			fmt.Fprintf(os.Stderr, "failed to unmarshal observed resource: %v", err)
-			os.Exit(1)
-		}
-		r.Spec.ForProvider.Color = Colors[rand.Intn(len(Colors))]
-		raw, err := yaml.Marshal(r)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "failed to marshal resource: %v", err)
-			os.Exit(1)
-		}
-		obj.Desired.Resources[i].Resource.Raw = raw
-	}
+        r := &dummyv1alpha1.Robot{}
+        if err := yaml.Unmarshal(desired.Resource.Raw, r); err != nil {
+            fmt.Fprintf(os.Stderr, "failed to unmarshal desired resource: %v", err)
+            os.Exit(1)
+        }
+        if colors[desired.Name] != "" {
+            r.Spec.ForProvider.Color = colors[desired.Name]
+        } else {
+            r.Spec.ForProvider.Color = Colors[rand.Intn(len(Colors))]
+        }
+        // NOTE: We need to use a JSON marshaller here because runtiem.RawExtension
+        // type expects a JSON blob.
+        raw, err := json.Marshal(r)
+        if err != nil {
+            fmt.Fprintf(os.Stderr, "failed to marshal resource: %v", err)
+            os.Exit(1)
+        }
+        obj.Desired.Resources[i].Resource = runtime.RawExtension{Raw: raw}
+    }
+```
+
+```bash
+# This is to make sure go.sum is tidied up after all the go get commands.
+go mod tidy
+```
+
+Let's check locally to make sure everything works as expected with a sample input.
+```bash
+# You can download the test.yaml file here: TODO
+cat test.yaml | go run main.go
 ```
 
 ## Try it Out
 
 Let's build and push the function.
-```bash
-# This is to make sure go.sum is tidied up after all the go get commands.
-go mod tidy
-```
 ```bash
 docker build --tag muvaf/xfn-random:v0.1.0 .
 docker push muvaf/xfn-random:v0.1.0
@@ -171,6 +177,9 @@ color parameter set. The full `resources` array should look like the following:
     base:
       apiVersion: iam.dummy.upbound.io/v1alpha1
       kind: Robot
+      spec:
+        forProvider:
+          color: ""
 ```
 
 Let's create a new `RobotGroup` object and see what happens.
@@ -183,3 +192,14 @@ metadata:
 spec: {}
 EOF
 ```
+
+Let's list all `Robot`s and see what color each of them has.
+```bash
+kubectl get robots
+```
+```bash
+kubectl get robots -o yaml
+```
+
+As you can see, one has `yellow` which was assigned in the `Composition` and the
+other one has a random color assigned by our function and it persists.

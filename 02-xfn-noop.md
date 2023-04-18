@@ -81,7 +81,8 @@ docker push muvaf/xfn-noop:v0.1.0
 
 Let's test it locally.
 ```bash
-echo "hello world" | docker run -i --rm muvaf/xfn-noop:v0.1.0
+# You can download the test.yaml file here: TODO
+cat test.yaml | docker run -i --rm muvaf/xfn-noop:v0.1.0
 ```
 
 ## Installation
