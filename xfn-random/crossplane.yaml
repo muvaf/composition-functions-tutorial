@@ -1,7 +1,7 @@
 apiVersion: meta.pkg.crossplane.io/v1alpha1
 kind: Function
 metadata:
-  name: xfn-noop
+  name: xfn-random
   annotations:
     meta.crossplane.io/maintainer: ContribFest Crossplane
     meta.crossplane.io/source: github.com/muvaf/xfn-the-hard-way

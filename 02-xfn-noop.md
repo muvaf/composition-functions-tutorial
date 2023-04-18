@@ -1,4 +1,4 @@
-# Developing a No-Op Function
+# Build a No-Op Function
 
 We will start with a no-op function that does nothing but prints the data it
 receives from Crossplane. This function will be used as a base for all other
@@ -75,11 +75,13 @@ metadata:
 Let's build and push the image to a registry. Assumes you are already logged in
 to DockerHub.
 ```bash
-# We're building multi-arch image for amd64 and arm64 to make sure the binary
-# works on both platforms.
-docker buildx build --platform linux/amd64,linux/arm64 \
-  --push \
-  --tag muvaf/xfn-noop:v0.1.0 .
+docker build --tag muvaf/xfn-noop:v0.1.0 .
+docker push muvaf/xfn-noop:v0.1.0
+```
+
+Let's test it locally.
+```bash
+echo "hello world" | docker run -i --rm muvaf/xfn-noop:v0.1.0
 ```
 
 ## Installation
@@ -165,14 +167,15 @@ EOF
 We should see that a single `Robot` resource is created as defined under `resources`
 array of our `Composition`.
 ```bash
-kubectl get robot
+kubectl get robot -o yaml
 ```
 
 As expected, our function printed the input as is without manipulating anything
 so we get exactly what's defined in the `resources` array.
 
-Let's look at the logs of our function by printing logs of the Crossplane pod
-since it is run in that container.
+### Cleanup
+
+Delete the `RobotGroup` instance.
 ```bash
-kubectl logs -n crossplane-system -l app=crossplane -c composition-function -f
+kubectl delete robotgroup my-robot-group
 ```
